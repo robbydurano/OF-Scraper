@@ -493,8 +493,23 @@ class Media(base.base):
     def license(self):
         if not self.mpd:
             return None
-        responsetype = self.post.responsetype.lower()
-        if responsetype in ["timeline", "archived", "pinned", "posts", "streams"]:
+        # Real bug found live (2026-10-05): purchased/"Paid" content gets
+        # a hardcoded responsetype="Paid" label upstream
+        # (process_paid_post), kept deliberately for folder naming (it's
+        # what keeps a "Purchased" folder distinct from plain "Posts").
+        # But "Paid" isn't in the whitelist below, so it fell through to
+        # "message" -- wrong whenever the underlying content was actually
+        # a purchased TIMELINE post, and OnlyFans 403s a /drm/message/...
+        # URL that doesn't exist for that post (confirmed live against a
+        # real failing item: its raw API response already carries
+        # "responseType": "post" directly -- the same raw field
+        # Post.responsetype itself already falls back to for any post
+        # that doesn't get an explicit override, e.g. genuine messages).
+        # Preferring that raw field here, only for the license URL, fixes
+        # the DRM lookup without touching folder naming at all.
+        raw_responsetype = (self.post._post or {}).get("responseType")
+        responsetype = (raw_responsetype or self.post.responsetype).lower()
+        if responsetype in ["timeline", "archived", "pinned", "posts", "post", "streams"]:
             responsetype = "post"
         else:
             responsetype = "message"
